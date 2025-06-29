@@ -3,6 +3,9 @@ from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassifica
 import torch
 import time
 import socket
+import re
+from nltk.tokenize import word_tokenize, sent_tokenize
+import numpy as np
 
 app = Flask(__name__)
 
@@ -43,6 +46,109 @@ def load_models():
         print(f"Error loading ModernBERT model: {e}")
         modernbert_tokenizer = None
         modernbert_model = None
+
+def validate_text_input(text):
+    """Validate text input against criteria and return validation results"""
+    # Trim leading/trailing whitespace and normalize internal whitespace
+    text = ' '.join(text.split())
+    
+    if not text.strip():
+        return {
+            "valid": False,
+            "warnings": [],
+            "errors": ["Text cannot be empty"],
+            "metrics": {}
+        }
+    
+    # Calculate text metrics
+    metrics = calculate_text_metrics(text)
+    
+    errors = []
+    warnings = []
+    
+    # HARD REQUIREMENTS (must be met)
+    if metrics['token_count'] <= 40:
+        errors.append(f"Token count ({metrics['token_count']}) must be > 40")
+    if metrics['token_count'] >= 950:
+        errors.append(f"Token count ({metrics['token_count']}) must be < 950")
+    if metrics['sentence_count'] < 2:
+        errors.append(f"Sentence count ({metrics['sentence_count']}) must be at least 2")
+    if metrics['paragraph_count'] != 1:
+        errors.append(f"Paragraph count ({metrics['paragraph_count']}) must be exactly 1")
+    
+    # WARNING THRESHOLDS (will show orange warning)
+    if metrics['sentence_count'] > 50:
+        warnings.append(f"Sentence count ({metrics['sentence_count']}) exceeds recommended maximum of 50")
+    if metrics['word_count'] < 30:
+        warnings.append(f"Word count ({metrics['word_count']}) is below recommended minimum of 30")
+    if metrics['word_count'] > 750:
+        warnings.append(f"Word count ({metrics['word_count']}) exceeds recommended maximum of 750")
+    if metrics['avg_words_per_sentence'] < 7:
+        warnings.append(f"Average words per sentence ({metrics['avg_words_per_sentence']:.1f}) is below recommended range (7-31)")
+    elif metrics['avg_words_per_sentence'] > 31:
+        warnings.append(f"Average words per sentence ({metrics['avg_words_per_sentence']:.1f}) exceeds recommended range (7-31)")
+    if metrics['avg_paragraph_length'] < 150:
+        warnings.append(f"Paragraph length ({metrics['avg_paragraph_length']:.0f} chars) is below recommended range (150-4000)")
+    elif metrics['avg_paragraph_length'] > 4000:
+        warnings.append(f"Paragraph length ({metrics['avg_paragraph_length']:.0f} chars) exceeds recommended range (150-4000)")
+    if metrics['punctuation_density'] < 0.01:
+        warnings.append(f"Punctuation density ({metrics['punctuation_density']:.3f}) is below recommended range (0.01-0.05)")
+    elif metrics['punctuation_density'] > 0.05:
+        warnings.append(f"Punctuation density ({metrics['punctuation_density']:.3f}) exceeds recommended range (0.01-0.05)")
+    
+    return {
+        "valid": len(errors) == 0,
+        "warnings": warnings,
+        "errors": errors,
+        "metrics": metrics
+    }
+
+def calculate_text_metrics(text):
+    """Calculate comprehensive text metrics for validation"""
+    # Token count
+    if modernbert_tokenizer:
+        tokens = modernbert_tokenizer.encode(text, add_special_tokens=True)
+        token_count = len(tokens)
+    else:
+        # Fallback: rough estimate
+        token_count = len(text.split()) * 1.3
+    
+    # Word count
+    words = word_tokenize(text.lower())
+    words = [word for word in words if word.isalpha()]
+    word_count = len(words)
+    
+    # Sentence count
+    sentences = sent_tokenize(text)
+    sentence_count = len(sentences)
+    
+    # Paragraph count
+    paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+    paragraph_count = len(paragraphs)
+    
+    # Average words per sentence
+    avg_words_per_sentence = word_count / sentence_count if sentence_count > 0 else 0
+    
+    # Average paragraph length
+    if paragraph_count > 0:
+        avg_paragraph_length = np.mean([len(p) for p in paragraphs])
+    else:
+        avg_paragraph_length = len(text)
+    
+    # Punctuation density
+    import string
+    punctuation_chars = sum(1 for char in text if char in string.punctuation)
+    punctuation_density = punctuation_chars / len(text) if len(text) > 0 else 0
+    
+    return {
+        'token_count': token_count,
+        'word_count': word_count,
+        'sentence_count': sentence_count,
+        'paragraph_count': paragraph_count,
+        'avg_words_per_sentence': avg_words_per_sentence,
+        'avg_paragraph_length': avg_paragraph_length,
+        'punctuation_density': punctuation_density
+    }
 
 def classify_with_mage(text):
     """Classify text using the MAGE model"""
@@ -112,11 +218,27 @@ def classify_with_modernbert(text):
 
 def classify_text(text):
     """Classify text using both models"""
+    # Trim leading/trailing whitespace and normalize internal whitespace
+    text = ' '.join(text.split())
+    
     if not text.strip():
         return {
             "mage": {"label": "Human", "confidence": 1.0, "model": "MAGE"},
             "modernbert": {"label": "Human", "confidence": 1.0, "model": "ModernBERT"},
-            "any_gpt": False
+            "any_gpt": False,
+            "validation": {"valid": False, "warnings": [], "errors": ["Text is empty"], "metrics": {}}
+        }
+    
+    # Validate text input
+    validation = validate_text_input(text)
+    
+    # Only classify if validation passes
+    if not validation["valid"]:
+        return {
+            "mage": {"label": "Human", "confidence": 1.0, "model": "MAGE"},
+            "modernbert": {"label": "Human", "confidence": 1.0, "model": "ModernBERT"},
+            "any_gpt": False,
+            "validation": validation
         }
     
     # Get results from both models
@@ -129,7 +251,8 @@ def classify_text(text):
     combined_result = {
         "mage": mage_result,
         "modernbert": modernbert_result,
-        "any_gpt": any_gpt
+        "any_gpt": any_gpt,
+        "validation": validation
     }
     
     print(f"Combined classification result: {combined_result}")
@@ -157,7 +280,8 @@ def status():
     return jsonify({
         "mage": {"label": "Human", "confidence": 1.0, "model": "MAGE"},
         "modernbert": {"label": "Human", "confidence": 1.0, "model": "ModernBERT"},
-        "any_gpt": False
+        "any_gpt": False,
+        "validation": {"valid": True, "warnings": [], "errors": [], "metrics": {}}
     })
 
 if __name__ == '__main__':

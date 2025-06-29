@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Text Detection</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         * {
             margin: 0;
@@ -97,6 +98,11 @@
             color: white;
         }
 
+        .status-warning {
+            background-color: #ff8c00;
+            color: white;
+        }
+
         .confidence {
             font-size: 14px;
             color: #666;
@@ -137,9 +143,49 @@
             border-left: 4px solid #007bff;
         }
 
-        .instructions h3 {
+        .instructions-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .instructions-header h3 {
             color: #333;
-            margin-bottom: 10px;
+            margin-bottom: 0;
+        }
+
+        .instructions-toggle {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #007bff;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 5px;
+            transition: background-color 0.2s ease;
+        }
+
+        .instructions-toggle:hover {
+            background-color: rgba(0, 123, 255, 0.1);
+        }
+
+        .instructions-content {
+            margin-top: 15px;
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
+
+        .instructions-content.collapsed {
+            max-height: 0;
+            margin-top: 0;
+            opacity: 0;
+        }
+
+        .instructions-content.expanded {
+            max-height: 500px;
+            opacity: 1;
         }
 
         .instructions ul {
@@ -207,6 +253,69 @@
             color: #666;
         }
 
+        .validation-section {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .validation-errors {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        .validation-warnings {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+
+        .validation-success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .validation-item {
+            margin: 5px 0;
+            padding: 5px 10px;
+            border-radius: 5px;
+            background-color: rgba(255, 255, 255, 0.7);
+        }
+
+        .metrics-display {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            font-size: 14px;
+            display: none;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+
+        .metric-item {
+            padding: 8px;
+            background-color: white;
+            border-radius: 5px;
+            border-left: 3px solid #007bff;
+        }
+
+        .metric-label {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .metric-value {
+            color: #666;
+        }
+
         @media (max-width: 768px) {
             .results-grid {
                 grid-template-columns: 1fr;
@@ -220,16 +329,34 @@
         <h1>🤖 LLM Text Detection</h1>
 
         <div class="instructions">
-            <h3>How to use:</h3>
-            <ul>
-                <li>Paste or type your text in the box below</li>
-                <li>The app uses two AI detection models: MAGE and ModernBERT</li>
-                <li>Both models will analyze the text after you stop typing for 2 seconds</li>
-                <li>The page background will change color based on the detection results</li>
-                <li><strong>White/Green:</strong> Both models detect human-written text</li>
-                <li><strong>Dark Red:</strong> Either model detects AI-generated text (GPT)</li>
-                <li>Individual model results and confidence scores are shown below</li>
-            </ul>
+            <div class="instructions-header" onclick="toggleInstructions()">
+                <h3>How to use:</h3>
+                <button class="instructions-toggle">
+                    <i class="fas fa-chevron-down" id="instructionsIcon"></i>
+                </button>
+            </div>
+            <div class="instructions-content collapsed" id="instructionsContent">
+                <ul>
+                    <li>Paste or type your text in the box below</li>
+                    <li>The app uses two AI detection models: MAGE and ModernBERT</li>
+                    <li>Both models will analyze the text after you stop typing for 2 seconds</li>
+                    <li>The page background will change color based on the detection results</li>
+                    <li><strong>White/Green:</strong> Both models detect human-written text</li>
+                    <li><strong>Dark Red:</strong> Either model detects AI-generated text (GPT)</li>
+                    <li><strong>Orange:</strong> Text meets requirements but has warnings (dissimilar to training data)
+                    </li>
+                    <li>Individual model results and confidence scores are shown below</li>
+                </ul>
+
+                <h4>Text Requirements:</h4>
+                <ul>
+                    <li><strong>Must have:</strong> 40-950 tokens, 2+ sentences, exactly 1 paragraph</li>
+                    <li><strong>Recommended:</strong> 30-750 words, 7-31 words per sentence, 150-4000 chars per
+                        paragraph
+                    </li>
+                    <li><strong>Warning thresholds:</strong> >50 sentences, punctuation density 0.01-0.05</li>
+                </ul>
+            </div>
         </div>
 
         <div class="input-section">
@@ -250,20 +377,32 @@
             </div>
             <div class="confidence" id="confidence"></div>
 
+            <!-- Validation Section -->
+            <div class="validation-section" id="validationSection">
+                <h4 id="validationTitle">Validation Results</h4>
+                <div id="validationContent"></div>
+            </div>
+
             <!-- Model Results Section -->
             <div class="model-results" id="modelResults" style="display: none;">
                 <div class="results-grid">
                     <div class="model-card" id="mageCard">
-                        <h3>🤖 MAGE Model</h3>
+                        <h3><a href="https://github.com/yafuly/MAGE">MAGE</a> Model</h3>
                         <div class="model-status" id="mageStatus">Ready</div>
                         <div class="model-confidence" id="mageConfidence"></div>
                     </div>
                     <div class="model-card" id="modernbertCard">
-                        <h3>🧠 ModernBERT Model</h3>
+                        <h3><a href="https://arxiv.org/abs/2502.15654">ModernBERT</a> Model</h3>
                         <div class="model-status" id="modernbertStatus">Ready</div>
                         <div class="model-confidence" id="modernbertConfidence"></div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Metrics Display -->
+            <div class="metrics-display" id="metricsDisplay">
+                <h4>Text Metrics</h4>
+                <div class="metrics-grid" id="metricsGrid"></div>
             </div>
         </div>
     </div>
@@ -307,6 +446,8 @@
             document.getElementById('statusIndicator').textContent = 'Ready to analyze';
             document.getElementById('confidence').textContent = '';
             document.getElementById('modelResults').style.display = 'none';
+            document.getElementById('validationSection').style.display = 'none';
+            document.getElementById('metricsDisplay').style.display = 'none';
             isProcessing = false;
         }
 
@@ -331,13 +472,34 @@
         function updateUI(result) {
             isProcessing = false;
             document.getElementById('loading').style.display = 'none';
-            document.getElementById('modelResults').style.display = 'block';
 
+            // Handle validation results
+            const validation = result.validation;
+            updateValidationDisplay(validation);
+
+            // Update main status based on validation and detection results
             const statusIndicator = document.getElementById('statusIndicator');
             const confidence = document.getElementById('confidence');
 
-            // Update main status based on if any model detected GPT
-            if (result.any_gpt) {
+            if (!validation.valid) {
+                // Show validation errors - don't change background color
+                document.body.style.backgroundColor = '#ffffff';
+                statusIndicator.className = 'status-indicator status-human';
+                statusIndicator.textContent = '⚠️ Validation Failed';
+                confidence.textContent = 'Please fix the errors above before analysis';
+                document.getElementById('modelResults').style.display = 'none';
+                return;
+            }
+
+            // Show model results
+            document.getElementById('modelResults').style.display = 'block';
+
+            // Check for warnings (orange glow)
+            if (validation.warnings && validation.warnings.length > 0) {
+                document.body.style.backgroundColor = '#ff8c00';
+                statusIndicator.className = 'status-indicator status-warning';
+                statusIndicator.textContent = '⚠️ Analysis with Warnings';
+            } else if (result.any_gpt) {
                 // Dark red background if any model says GPT
                 document.body.style.backgroundColor = '#8B0000';
                 statusIndicator.className = 'status-indicator status-gpt';
@@ -366,6 +528,105 @@
             // Update overall confidence display
             const avgConfidence = ((result.mage.confidence + result.modernbert.confidence) / 2 * 100).toFixed(1);
             confidence.textContent = `Average Confidence: ${avgConfidence}%`;
+        }
+
+        function updateValidationDisplay(validation) {
+            const validationSection = document.getElementById('validationSection');
+            const validationTitle = document.getElementById('validationTitle');
+            const validationContent = document.getElementById('validationContent');
+            const metricsDisplay = document.getElementById('metricsDisplay');
+            const metricsGrid = document.getElementById('metricsGrid');
+
+            // Show validation section
+            validationSection.style.display = 'block';
+
+            // Clear previous content
+            validationContent.innerHTML = '';
+
+            if (!validation.valid) {
+                // Show errors
+                validationTitle.textContent = '❌ Validation Errors';
+                validationSection.className = 'validation-section validation-errors';
+
+                validation.errors.forEach(error => {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'validation-item';
+                    errorDiv.textContent = error;
+                    validationContent.appendChild(errorDiv);
+                });
+            } else if (validation.warnings && validation.warnings.length > 0) {
+                // Show warnings
+                validationTitle.textContent = '⚠️ Validation Warnings';
+                validationSection.className = 'validation-section validation-warnings';
+
+                validation.warnings.forEach(warning => {
+                    const warningDiv = document.createElement('div');
+                    warningDiv.className = 'validation-item';
+                    warningDiv.textContent = warning;
+                    validationContent.appendChild(warningDiv);
+                });
+            } else {
+                // Show success
+                validationTitle.textContent = '✅ Validation Passed';
+                validationSection.className = 'validation-section validation-success';
+
+                const successDiv = document.createElement('div');
+                successDiv.className = 'validation-item';
+                successDiv.textContent = 'Text meets all requirements and recommendations';
+                validationContent.appendChild(successDiv);
+            }
+
+            // Show metrics if available
+            if (validation.metrics && Object.keys(validation.metrics).length > 0) {
+                metricsDisplay.style.display = 'block';
+                metricsGrid.innerHTML = '';
+
+                const metricLabels = {
+                    'token_count': 'Token Count',
+                    'word_count': 'Word Count',
+                    'sentence_count': 'Sentence Count',
+                    'paragraph_count': 'Paragraph Count',
+                    'avg_words_per_sentence': 'Avg Words/Sentence',
+                    'avg_paragraph_length': 'Avg Paragraph Length',
+                    'punctuation_density': 'Punctuation Density'
+                };
+
+                Object.entries(validation.metrics).forEach(([key, value]) => {
+                    const metricDiv = document.createElement('div');
+                    metricDiv.className = 'metric-item';
+
+                    const labelDiv = document.createElement('div');
+                    labelDiv.className = 'metric-label';
+                    labelDiv.textContent = metricLabels[key] || key;
+
+                    const valueDiv = document.createElement('div');
+                    valueDiv.className = 'metric-value';
+                    valueDiv.textContent = typeof value === 'number' ? value.toFixed(2) : value;
+
+                    metricDiv.appendChild(labelDiv);
+                    metricDiv.appendChild(valueDiv);
+                    metricsGrid.appendChild(metricDiv);
+                });
+            } else {
+                metricsDisplay.style.display = 'none';
+            }
+        }
+
+        function toggleInstructions() {
+            const content = document.getElementById('instructionsContent');
+            const icon = document.getElementById('instructionsIcon');
+
+            if (content.classList.contains('collapsed')) {
+                content.classList.remove('collapsed');
+                content.classList.add('expanded');
+                icon.classList.remove('fa-chevron-down');
+                icon.classList.add('fa-chevron-up');
+            } else {
+                content.classList.add('collapsed');
+                content.classList.remove('expanded');
+                icon.classList.remove('fa-chevron-up');
+                icon.classList.add('fa-chevron-down');
+            }
         }
 
         // Initialize
