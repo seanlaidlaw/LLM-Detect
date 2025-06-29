@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Text Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            min-height: 100vh;
+            transition: background-color 0.5s ease;
+            background-color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            width: 100%;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            backdrop-filter: blur(10px);
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            font-weight: 300;
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        .text-area-container {
+            position: relative;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            line-height: 1.6;
+            resize: vertical;
+            transition: border-color 0.3s ease;
+            font-family: inherit;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+
+        .status-section {
+            text-align: center;
+            margin-top: 20px;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: bold;
+            font-size: 18px;
+            transition: all 0.3s ease;
+            margin-bottom: 10px;
+        }
+
+        .status-processing {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .status-human {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .status-gpt {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .confidence {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #007bff;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .instructions {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+        }
+
+        .instructions h3 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .instructions ul {
+            color: #666;
+            line-height: 1.6;
+        }
+
+        .instructions li {
+            margin-bottom: 5px;
+        }
+
+        .model-results {
+            margin-top: 30px;
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .model-card {
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .model-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.2em;
+        }
+
+        .model-status {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            display: inline-block;
+        }
+
+        .model-status.human {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .model-status.gpt {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .model-status.processing {
+            background-color: #ffc107;
+            color: #333;
+        }
+
+        .model-confidence {
+            font-size: 14px;
+            color: #666;
+        }
+
+        @media (max-width: 768px) {
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🤖 LLM Text Detection</h1>
+
+        <div class="instructions">
+            <h3>How to use:</h3>
+            <ul>
+                <li>Paste or type your text in the box below</li>
+                <li>The app uses two AI detection models: MAGE and ModernBERT</li>
+                <li>Both models will analyze the text after you stop typing for 2 seconds</li>
+                <li>The page background will change color based on the detection results</li>
+                <li><strong>White/Green:</strong> Both models detect human-written text</li>
+                <li><strong>Dark Red:</strong> Either model detects AI-generated text (GPT)</li>
+                <li>Individual model results and confidence scores are shown below</li>
+            </ul>
+        </div>
+
+        <div class="input-section">
+            <div class="text-area-container">
+                <textarea id="textInput" placeholder="Paste or type your text here..."
+                    oninput="handleTextInput()"></textarea>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Analyzing text...</p>
+        </div>
+
+        <div class="status-section">
+            <div class="status-indicator status-human" id="statusIndicator">
+                Ready to analyze
+            </div>
+            <div class="confidence" id="confidence"></div>
+
+            <!-- Model Results Section -->
+            <div class="model-results" id="modelResults" style="display: none;">
+                <div class="results-grid">
+                    <div class="model-card" id="mageCard">
+                        <h3>🤖 MAGE Model</h3>
+                        <div class="model-status" id="mageStatus">Ready</div>
+                        <div class="model-confidence" id="mageConfidence"></div>
+                    </div>
+                    <div class="model-card" id="modernbertCard">
+                        <h3>🧠 ModernBERT Model</h3>
+                        <div class="model-status" id="modernbertStatus">Ready</div>
+                        <div class="model-confidence" id="modernbertConfidence"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let typingTimer;
+        let isProcessing = false;
+
+        function handleTextInput() {
+            clearTimeout(typingTimer);
+            const text = document.getElementById('textInput').value;
+
+            if (text.trim() === '') {
+                resetToDefault();
+                return;
+            }
+
+            // Show processing state
+            showProcessing();
+
+            // Set timer for 2 seconds
+            typingTimer = setTimeout(() => {
+                classifyText(text);
+            }, 2000);
+        }
+
+        function showProcessing() {
+            if (isProcessing) return;
+
+            isProcessing = true;
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('statusIndicator').className = 'status-indicator status-processing';
+            document.getElementById('statusIndicator').textContent = 'Processing...';
+            document.getElementById('confidence').textContent = '';
+        }
+
+        function resetToDefault() {
+            document.body.style.backgroundColor = '#ffffff';
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('statusIndicator').className = 'status-indicator status-human';
+            document.getElementById('statusIndicator').textContent = 'Ready to analyze';
+            document.getElementById('confidence').textContent = '';
+            document.getElementById('modelResults').style.display = 'none';
+            isProcessing = false;
+        }
+
+        async function classifyText(text) {
+            try {
+                const response = await fetch('/classify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ text: text })
+                });
+
+                const result = await response.json();
+                updateUI(result);
+            } catch (error) {
+                console.error('Error:', error);
+                resetToDefault();
+            }
+        }
+
+        function updateUI(result) {
+            isProcessing = false;
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('modelResults').style.display = 'block';
+
+            const statusIndicator = document.getElementById('statusIndicator');
+            const confidence = document.getElementById('confidence');
+
+            // Update main status based on if any model detected GPT
+            if (result.any_gpt) {
+                // Dark red background if any model says GPT
+                document.body.style.backgroundColor = '#8B0000';
+                statusIndicator.className = 'status-indicator status-gpt';
+                statusIndicator.textContent = '🤖 AI-Generated Detected';
+            } else {
+                // White background if both say Human
+                document.body.style.backgroundColor = '#ffffff';
+                statusIndicator.className = 'status-indicator status-human';
+                statusIndicator.textContent = '👤 Human-Written';
+            }
+
+            // Update MAGE model results
+            const mageStatus = document.getElementById('mageStatus');
+            const mageConfidence = document.getElementById('mageConfidence');
+            mageStatus.textContent = result.mage.label === 'GPT' ? '🤖 AI-Generated' : '👤 Human';
+            mageStatus.className = `model-status ${result.mage.label.toLowerCase()}`;
+            mageConfidence.textContent = `Confidence: ${(result.mage.confidence * 100).toFixed(1)}%`;
+
+            // Update ModernBERT model results
+            const modernbertStatus = document.getElementById('modernbertStatus');
+            const modernbertConfidence = document.getElementById('modernbertConfidence');
+            modernbertStatus.textContent = result.modernbert.label === 'GPT' ? '🤖 AI-Generated' : '👤 Human';
+            modernbertStatus.className = `model-status ${result.modernbert.label.toLowerCase()}`;
+            modernbertConfidence.textContent = `Confidence: ${(result.modernbert.confidence * 100).toFixed(1)}%`;
+
+            // Update overall confidence display
+            const avgConfidence = ((result.mage.confidence + result.modernbert.confidence) / 2 * 100).toFixed(1);
+            confidence.textContent = `Average Confidence: ${avgConfidence}%`;
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function () {
+            resetToDefault();
+        });
+    </script>
+</body>
+
+</html>
